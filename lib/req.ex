@@ -85,7 +85,8 @@ defmodule Req do
           :connect_options,
           :receive_timeout,
           :pool_timeout,
-          :unix_socket
+          :unix_socket,
+          :stream
         ])
     }
     |> update(options)

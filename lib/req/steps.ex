@@ -586,18 +586,41 @@ defmodule Req.Steps do
     finch_options =
       request.options |> Map.take([:receive_timeout, :pool_timeout]) |> Enum.to_list()
 
-    case Finch.request(finch_request, finch_name, finch_options) do
-      {:ok, response} ->
-        response = %Req.Response{
-          status: response.status,
-          headers: response.headers,
-          body: response.body
-        }
+    if fun = request.options[:stream] do
+      fun = fn
+        {:status, status}, {request, response} ->
+          {request, %{response | status: status}}
 
-        {request, response}
+        {:headers, headers}, {request, response} ->
+          {request, %{response | headers: headers}}
 
-      {:error, exception} ->
-        {request, exception}
+        {:data, data}, {request, response} ->
+          fun.(data, {request, response})
+      end
+
+      response = %Req.Response{}
+
+      case Finch.stream(finch_request, finch_name, {request, response}, fun, finch_options) do
+        {:ok, request_response} ->
+          request_response
+
+        {:error, exception} ->
+          {request, exception}
+      end
+    else
+      case Finch.request(finch_request, finch_name, finch_options) do
+        {:ok, response} ->
+          response = %Req.Response{
+            status: response.status,
+            headers: response.headers,
+            body: response.body
+          }
+
+          {request, response}
+
+        {:error, exception} ->
+          {request, exception}
+      end
     end
   end
 

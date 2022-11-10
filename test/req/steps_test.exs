@@ -1082,6 +1082,66 @@ defmodule Req.StepsTest do
     end
   end
 
+  test "run_finch/1: stream", c do
+    Bypass.expect(c.bypass, "GET", "/", fn conn ->
+      conn = Plug.Conn.send_chunked(conn, 200)
+      {:ok, conn} = Plug.Conn.chunk(conn, "foo")
+      {:ok, conn} = Plug.Conn.chunk(conn, "bar")
+      conn
+    end)
+
+    assert Req.get!(c.url,
+             stream: fn chunk, {request, response} ->
+               response = update_in(response.body, &(&1 <> "[#{chunk}]"))
+               {request, response}
+             end
+           ).body == "[foo][bar]"
+  end
+
+  test "run_finch/1: stream with redirect", c do
+    Bypass.expect(c.bypass, "GET", "/", fn conn ->
+      redirect(conn, 302, "/stream")
+    end)
+
+    Bypass.expect(c.bypass, "GET", "/stream", fn conn ->
+      conn = Plug.Conn.send_chunked(conn, 200)
+      {:ok, conn} = Plug.Conn.chunk(conn, "foo")
+      {:ok, conn} = Plug.Conn.chunk(conn, "bar")
+      conn
+    end)
+
+    assert Req.get!(c.url,
+             stream: fn chunk, {request, response} ->
+               response = update_in(response.body, &(&1 <> "[#{chunk}]"))
+               {request, response}
+             end
+           ).body == "[foo][bar]"
+  end
+
+  @tag :capture_log
+  test "run_finch/1: stream with error", c do
+    pid = self()
+
+    Bypass.expect(c.bypass, "GET", "/", fn conn ->
+      send(pid, :ping)
+      Plug.Conn.send_resp(conn, 500, "error")
+    end)
+
+    assert Req.get!(c.url,
+             retry_delay: 1,
+             stream: fn chunk, {request, response} ->
+               response = update_in(response.body, &(&1 <> "[#{chunk}]"))
+               {request, response}
+             end
+           ).body == "[error]"
+
+    assert_received :ping
+    assert_received :ping
+    assert_received :ping
+    assert_received :ping
+    refute_receive _
+  end
+
   test "run_finch/1: :connect_options bad option", c do
     assert_raise ArgumentError, "unknown option :timeou. Did you mean :timeout?", fn ->
       Req.get!(c.url, connect_options: [timeou: 0])
