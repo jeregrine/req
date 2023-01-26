@@ -598,7 +598,7 @@ defmodule Req.Steps do
           fun.(data, {request, response})
       end
 
-      response = %Req.Response{}
+      response = %Req.Response{body: nil}
 
       case Finch.stream(finch_request, finch_name, {request, response}, fun, finch_options) do
         {:ok, request_response} ->
